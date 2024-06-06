@@ -14,29 +14,82 @@ import { z } from "zod";
 import { DynamicTool, DynamicStructuredTool } from "@langchain/core/tools";
 dotenv.config();
 
+
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "sk-proj-cMi3oUDMt5ESdDamKUY8T3BlbkFJS9bOrqeHzZLMxzE4U1KB", // Your OpenAI API key here, I used "-" to avoid errors when the key is not set but you should not do that
+  apiKey: process.env.OPENAI_API_KEY || "-", // Your OpenAI API key here, I used "-" to avoid errors when the key is not set but you should not do that
 });
 const llm = new ChatOpenAI({
   model: "gpt-3.5-turbo",
   temperature: 0,
 });
+
+var qaLog=[];
+var previousQuestions = []; 
+var a_questions = [
+  "Tell me about yourself and your experience.",
+  "What attracted you to apply for this position?",
+  "Can you describe a challenging problem you've faced in your previous role and how you solved it?",
+  "How do you handle tight deadlines and multiple priorities?",
+  "What are your strengths and weaknesses?",
+  "Where do you see yourself in five years?",
+  "Do you have any questions for us about the company or the position?",
+];
+const askQuestions = async () => {
+  
+  // Filter out previously asked questions
+  const filteredQuestions = a_questions.filter(q => !previousQuestions.includes(q));
+
+  // If all questions are asked, reset the list
+  if (filteredQuestions.length === 0) {
+    previousQuestions = [];
+    return a_questions;
+  }
+  return filteredQuestions;
+};
+
 const tools = [
   new DynamicTool({
-    name: "FOO",
-    description:
-      "call this to get the value of foo. input should be an empty string.",
-    func: async () => "baz",
+    name: "interview-question-generator",
+    description: "Data science is an interdisciplinary field that combines statistics, computer science, and domain-specific knowledge to extract meaningful insights from data. It involves collecting, cleaning, and analyzing large datasets using various techniques such as machine learning, data mining, and predictive analytics. Data scientists use tools like Python, R, SQL, and visualization software to uncover patterns, make predictions, and support decision-making across different industries. The ultimate goal of data science is to turn data into actionable knowledge that drives strategic and operational decisions.",
+    func: async () => {
+      const description = "Write a short summary of your favorite book.";
+      const response = await openai.createCompletion({
+        model: "text-davinci-003",
+        prompt: `Generate 5 questions based on the following description:\n\n${description}\n\nQuestions:`,
+        max_tokens: 150,
+        n: 1,
+        stop: ["\n\n"],
+      });
+      const questions = response.data.choices[0].text.trim().split('\n').filter(line => line !== "");
+      a_questions.push(questions);
+      return questions.join('\n');
+    }
+  }),
+  new DynamicTool({
+    name: "ask-interview-questions",
+    description: "Asks interview questions to candidates without repetition",
+    func: async () => {
+      const questions = await askQuestions();
+      // Pick a random question from the available questions
+      const randomQuestion = questions[Math.floor(Math.random() * questions.length)];
+      // Add the asked question to the list of previous questions
+      previousQuestions.push(randomQuestion);
+      // Return the selected question
+      return randomQuestion;
+    }
   }),
   new DynamicStructuredTool({
-    name: "random-number-generator",
-    description: "generates a random number between two input numbers",
+    name: "check-user-answer",
+    description: "Logs a question and answer given by the user",
     schema: z.object({
-      low: z.number().describe("The lower bound of the generated number"),
-      high: z.number().describe("The upper bound of the generated number"),
+      question: z.string().describe("The question text"),
+      answer: z.string().describe("The answer text"),
     }),
-    func: async ({ low, high }) =>
-      (Math.random() * (high - low) + low).toString(), // Outputs still must be strings
+    func: async ({ question, answer }) => {
+      qaLog.push({ question, answer });
+      return "Question and answer logged successfully.";
+    },
   }),
 ];
 const prompt = ChatPromptTemplate.fromMessages([
@@ -99,15 +152,48 @@ const lipSyncMessage = async (message) => {
   // -r phonetic is faster but less accurate
   console.log(`Lip sync done in ${new Date().getTime() - time}ms`);
 };
-var history=[
-  new HumanMessage("hi"),
-  new AIMessage("hello"),
-];
+var history=[];
 var i=0;
 app.post("/chat", async (req, res) => {
   const userMessage = req.body.message;
-  
+  /*if(qaLog.length > 5 ){
+      const textContent = list.join('\n');
+
+      // Write the string to a text file
+      fs.writeFile('.txt', textContent, (err) => {
+      if (err) {
+          console.error('Error writing to file', err);
+      } else {
+          console.log('List saved to list.txt');
+      }
+      });
+
+    res.send({
+      messages: [
+        {
+          text: "no more questions for you",
+          audio: await audioFileToBase64('final.mp3'),
+          lipsync: await readJsonTranscript(`audios/intro_0.json`),
+          facialExpression: "smile",
+          animation: "Talking_1",
+        },
+      ],
+    });
+    return;
+  }*/
   if (!userMessage) {
+    history.push(new HumanMessage("you should start the interview by generating quesions and ask the question to user"));
+    var result = await agentExecutor.invoke({
+      input: "start",
+      chat_history: history,
+    });
+    history.push(new AIMessage(result.output));
+    console.log(result.output);
+    console.log(history)
+    var fileName = `audios/message_${i}.mp3`; // The name of your audio file
+    var textInput = result.output; // The text you wish to convert to speech
+    await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
+    //await lipSyncMessage(i);
     res.send({
       messages: [
         {
@@ -117,29 +203,24 @@ app.post("/chat", async (req, res) => {
           facialExpression: "smile",
           animation: "Talking_1",
         },
-      ],
-    });
-    return;
-  }
-  if (!elevenLabsApiKey || openai.apiKey === "-") {
-    res.send({
-      messages: [
         {
-          text: "Please enter your api keys",
-          audio: await audioFileToBase64("audios/api.wav"),
-          lipsync: await readJsonTranscript("audios/api_0.json"),
-          facialExpression: "angry",
-          animation: "Angry",
+          text: result.output,
+          audio: await audioFileToBase64(fileName),
+          lipsync: await readJsonTranscript(`audios/intro_0.json`),
+          facialExpression: "smile",
+          animation: "Talking_1",
         },
       ],
     });
+    i++;
     return;
   }
+
   var result = await agentExecutor.invoke({
-    input: userMessage,
+    input: "check this answer and log it into the log-question-answer: "+userMessage,
     chat_history: history,
   });
-  history.push(new HumanMessage(userMessage));
+  
   history.push(new AIMessage(result.output));
   console.log(userMessage);
   console.log(history)
@@ -159,6 +240,8 @@ app.post("/chat", async (req, res) => {
     ],
   });
   i++;
+
+  console.log(qaLog)
   return;
 });
 
