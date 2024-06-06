@@ -25,7 +25,7 @@ export const UI = ({ hidden, ...props }) => {
         <div className="flex items-center gap-2 pointer-events-auto max-w-screen-sm w-full mx-auto">
           <input
             className="w-full placeholder:text-gray-800 placeholder:italic p-4 rounded-md bg-opacity-50 bg-white backdrop-blur-md"
-            placeholder="Type a message..."
+            placeholder="Type the answer..."
             ref={input}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -40,7 +40,7 @@ export const UI = ({ hidden, ...props }) => {
               loading || message ? "cursor-not-allowed opacity-30" : ""
             }`}
           >
-            Send
+            Start / Send
           </button>
         </div>
       </div>
