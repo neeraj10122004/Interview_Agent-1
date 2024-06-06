@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-const backendUrl = "https://3000-neeraj10122-interviewag-3xk88gqhlig.ws-us114.gitpod.io";
+const backendUrl = "https://3000-neerajsaite-interviewag-1e6rfk88ety.ws-us114.gitpod.io";
 
 const ChatContext = createContext();
 
